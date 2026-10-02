@@ -62,6 +62,7 @@ export function createElectronBuilderConfig(
   if (unsigned && resolvedPlatform !== 'win32') throw new Error('desktop package: unsigned builds require Windows')
   const packagesMacOS = targetPlatform === 'darwin' || (targetPlatform === undefined && hostPlatform === 'darwin')
   const packagesWindows = resolvedPlatform === 'win32'
+  const packagesLinux = resolvedPlatform === 'linux'
   if (resolvedPlatform === 'win32') installWindowsDirectoryInstaller()
   const macOSSigning = packagesMacOS ? resolveMacOSSigningEnvironment(env) : undefined
   if (packagesMacOS) resolveMacOSNotarizationEnvironment(env)
@@ -144,8 +145,9 @@ export function createElectronBuilderConfig(
     extraResources: [
       { from: buildPaths.runtime, to: 'runtime' },
       { from: fileURLToPath(new URL('../resources/icon-windows.png', import.meta.url)), to: 'icon.png' },
-      // Windows tray bitmaps; macOS keeps the Dock and ships no menu bar icon.
+      // Windows tray bitmaps; macOS keeps the Dock and ships no menu bar icon; Linux takes one PNG.
       ...(packagesWindows ? [{ from: fileURLToPath(new URL('../resources/tray-windows.ico', import.meta.url)), to: 'tray.ico' }] : []),
+      ...(packagesLinux ? [{ from: fileURLToPath(new URL('../resources/tray-linux.png', import.meta.url)), to: 'tray.png' }] : []),
     ],
     mac: {
       icon: fileURLToPath(new URL('../resources/icon-macos.png', import.meta.url)),
@@ -231,8 +233,13 @@ export function createElectronBuilderConfig(
       target: ['nsis'],
     },
     linux: {
+      icon: fileURLToPath(new URL('../resources/icon-windows.png', import.meta.url)),
       category: 'Development',
-      target: ['AppImage'],
+      // A space-free binary and desktop entry name; productName stays "DeepSeek Harness".
+      executableName: 'deepseek-harness',
+      // fpm requires a maintainer with an email when the manifest declares no author.
+      maintainer: 'DeepSeek Harness <support@deepseek.com>',
+      target: ['deb', 'AppImage'],
     },
     nsis: {
       installerSidebar: join(buildPaths.root, 'installer-ui', 'uninstaller-sidebar.bmp'),

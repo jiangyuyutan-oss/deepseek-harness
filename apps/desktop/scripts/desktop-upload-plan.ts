@@ -21,11 +21,19 @@ const TARGETS = {
   'mac-arm64': { platform: 'darwin', arch: 'arm64', os: 'mac' },
   'mac-x64': { platform: 'darwin', arch: 'x64', os: 'mac' },
   'win-x64': { platform: 'win32', arch: 'x64', os: 'win' },
+  'linux-arm64': { platform: 'linux', arch: 'arm64', os: 'linux' },
 } as const satisfies Record<DesktopPackageTargetName, {
   readonly platform: NodeJS.Platform
   readonly arch: string
   readonly os: string
 }>
+
+/** Updater artifact each target's channel metadata references, and the fixed-download installer it publishes. */
+const TARGET_ARTIFACTS = {
+  darwin: { updaterExtension: 'zip', installerExtension: 'dmg', installerContentType: 'application/x-apple-diskimage' },
+  win32: { updaterExtension: 'exe', installerExtension: 'exe', installerContentType: 'application/vnd.microsoft.portable-executable' },
+  linux: { updaterExtension: 'deb', installerExtension: 'deb', installerContentType: 'application/vnd.debian.binary-package' },
+} as const
 
 /** One local file and its final object metadata. */
 export interface DesktopUploadArtifact {
@@ -118,6 +126,15 @@ function updateFileInfo(value: unknown, label: string, expectedFilename: string)
     size: numberField(info.size, `${label}.size`),
     sha512: stringField(info.sha512, `${label}.sha512`),
   }
+}
+
+function updateFileUrl(value: unknown, label: string): string {
+  const info = object(value, label)
+  return stringField(info.url ?? info.path, `${label}.url`)
+}
+
+function findUpdateFile(files: readonly unknown[], filename: string): unknown {
+  return files.find(file => updateFileUrl(file, 'update file') === filename)
 }
 
 async function sha512(path: string): Promise<string> {
@@ -230,13 +247,21 @@ export async function createDesktopUploadPlan(
   if (metadataVersion !== buildVersion) {
     throw new Error(`desktop upload: ${metadataFilename} version ${metadataVersion} does not match published version ${buildVersion}`)
   }
-  if (!Array.isArray(metadata.files) || metadata.files.length !== 1) {
-    throw new Error(`desktop upload: ${metadataFilename}.files must contain exactly one target update file`)
+  // electron-builder merges every built target of one arch into a single channel file; only Linux
+  // ships more than one target (deb and AppImage), so its feed names the files it must reference.
+  if (!Array.isArray(metadata.files) || metadata.files.length === 0
+    || (target.platform !== 'linux' && metadata.files.length !== 1)) {
+    throw new Error(`desktop upload: ${metadataFilename}.files must contain ${target.platform === 'linux' ? 'at least one' : 'exactly one'} target update file`)
   }
 
   const base = `deepseek-harness-${buildVersion}-${target.os}-${target.arch}`
-  const updaterExtension = target.platform === 'darwin' ? 'zip' : 'exe'
-  const updaterInfo = updateFileInfo(metadata.files[0], `${metadataFilename}.files[0]`, `${base}.${updaterExtension}`)
+  const artifactSpec = TARGET_ARTIFACTS[target.platform]
+  const updaterFilename = `${base}.${artifactSpec.updaterExtension}`
+  const updaterValue = findUpdateFile(metadata.files, updaterFilename)
+  if (updaterValue === undefined) {
+    throw new Error(`desktop upload: ${metadataFilename} must reference ${updaterFilename}`)
+  }
+  const updaterInfo = updateFileInfo(updaterValue, `${metadataFilename}.files`, updaterFilename)
   const updaterPath = await verifyChecksummedArtifact(artifactsRoot, updaterInfo)
   const artifacts: DesktopUploadArtifact[] = []
   const binaryPrefix = update.binaryKeyPrefix
@@ -245,28 +270,40 @@ export async function createDesktopUploadPlan(
   if (target.platform === 'darwin') {
     const dmgPath = await requireArtifact(artifactsRoot, `${base}.dmg`)
     const blockmapPath = await requireArtifact(artifactsRoot, `${base}.zip.blockmap`)
-    installerArtifact = uploadArtifact(dmgPath, binaryPrefix, 'application/x-apple-diskimage')
+    installerArtifact = uploadArtifact(dmgPath, binaryPrefix, artifactSpec.installerContentType)
     artifacts.push(
       installerArtifact,
       uploadArtifact(updaterPath, binaryPrefix, 'application/zip'),
       uploadArtifact(blockmapPath, binaryPrefix, 'application/octet-stream'),
     )
   }
-  else {
+  else if (target.platform === 'win32') {
     const blockmapPath = await requireArtifact(artifactsRoot, `${base}.exe.blockmap`)
-    installerArtifact = uploadArtifact(
-      updaterPath,
-      binaryPrefix,
-      'application/vnd.microsoft.portable-executable',
-    )
+    installerArtifact = uploadArtifact(updaterPath, binaryPrefix, artifactSpec.installerContentType)
     artifacts.push(installerArtifact)
     artifacts.push(uploadArtifact(blockmapPath, binaryPrefix, 'application/octet-stream'))
+  }
+  else {
+    installerArtifact = uploadArtifact(updaterPath, binaryPrefix, artifactSpec.installerContentType)
+    artifacts.push(installerArtifact)
+    // The deb is the fixed-download installer; the merged feed may also carry an AppImage users run.
+    const appImageValue = findUpdateFile(metadata.files, `${base}.AppImage`)
+    if (appImageValue !== undefined) {
+      const appImageInfo = updateFileInfo(appImageValue, `${metadataFilename}.files`, `${base}.AppImage`)
+      artifacts.push(uploadArtifact(
+        await verifyChecksummedArtifact(artifactsRoot, appImageInfo),
+        binaryPrefix,
+        'application/octet-stream',
+      ))
+    }
   }
 
   const payloadUrl = `${update.origin}/${binaryPrefix}/${updaterInfo.filename}`
   const published = {
     ...metadata,
-    files: [{ ...object(metadata.files[0], `${metadataFilename}.files[0]`), url: payloadUrl }],
+    // electron-updater resolves each merged target through its own URL; only the file list changes.
+    files: metadata.files.map(file => ({ ...object(file, `${metadataFilename}.files`),
+      url: `${update.origin}/${binaryPrefix}/${updateFileUrl(file, `${metadataFilename}.files`)}` })),
     ...(metadata.path === undefined ? {} : { path: payloadUrl }),
   }
   const channelArtifact = {
@@ -278,7 +315,8 @@ export async function createDesktopUploadPlan(
     const stableFilename = metadataFilename.replace('nightly', 'latest')
     artifacts.push({ ...channelArtifact, filename: stableFilename, key: `${update.keyPrefix}/${stableFilename}` })
   }
-  const latestFilename = `dsh-latest-${target.platform === 'darwin' ? 'macos' : 'windows'}-${target.arch}.${target.platform === 'darwin' ? 'dmg' : 'exe'}`
+  const platformName = target.platform === 'darwin' ? 'macos' : target.platform === 'win32' ? 'windows' : 'linux'
+  const latestFilename = `dsh-latest-${platformName}-${target.arch}.${artifactSpec.installerExtension}`
   const latestKey = `desktop/${latestFilename}`
   return {
     environment: update.environment,

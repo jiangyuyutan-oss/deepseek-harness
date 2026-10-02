@@ -1,6 +1,7 @@
-/** Private command-management worker; macOS mutation targets are fixed before elevation. */
+/** Private command-management worker; platform mutation targets are fixed before elevation. */
 
 import { spawn } from 'node:child_process'
+import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { CommandInstallationError, inspectFileCommand, installFileCommand, removeFileCommand } from './command-installation.ts'
@@ -33,8 +34,14 @@ try {
     })
     child.stdin.end(JSON.stringify({ operation, expected, directory: join(resources, 'runtime', 'cli', 'bin') }))
     process.exitCode = await exited ?? 1
+  } else if (process.platform === 'linux') {
+    // The user-owned bin directory needs no elevation, so the launcher link is written directly.
+    const options = { destination: join(homedir(), '.local', 'bin', 'dsh'), launcher: join(resources, 'runtime', 'cli', 'bin', 'dsh-linux') }
+    const state = operation === 'inspect' ? await inspectFileCommand(options)
+      : operation === 'install' ? await installFileCommand(options, fingerprint) : await removeFileCommand(options, fingerprint)
+    process.stdout.write(JSON.stringify({ ok: true, state }) + '\n')
   } else {
-    throw new CommandInstallationError('EUNSUPPORTED', 'Command installation is supported on macOS and Windows.')
+    throw new CommandInstallationError('EUNSUPPORTED', 'Command installation is supported on macOS, Windows, and Linux.')
   }
 } catch (error) {
   // osascript preserves stdout only when the command exits successfully; the response owns operation failures.

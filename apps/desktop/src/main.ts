@@ -389,7 +389,9 @@ async function main(): Promise<void> {
   const commandManager = new DesktopCommandManager({
     resources: process.resourcesPath,
     isPackaged: app.isPackaged,
-    isInstalledLocation: () => process.platform !== 'darwin' || app.isInApplicationsFolder(),
+    // A deb install keeps its resources in place; an AppImage mount disappears with the process, so its launcher link would dangle.
+    isInstalledLocation: () => process.platform === 'darwin' ? app.isInApplicationsFolder()
+      : process.platform === 'linux' ? process.env.APPIMAGE === undefined : true,
     isInstalling: () => updateState.phase === 'installing',
     isQuitting,
     messages: () => currentDesktopLocale().messages,
@@ -438,7 +440,8 @@ async function main(): Promise<void> {
     return next.promise
   }
   const platformView = new DesktopPlatformView(join(app.getAppPath(), 'lib', 'preload-platform-account.cjs'),
-    () => locale.id === 'zh-CN' ? 'zh_CN' : 'en_US', process.platform === 'win32' ? 'win32' : 'darwin')
+    () => locale.id === 'zh-CN' ? 'zh_CN' : 'en_US',
+    process.platform === 'win32' ? 'win32' : process.platform === 'darwin' ? 'darwin' : 'linux')
   const backend = new DesktopBackendController((onFailure) => {
     const hostInspectPort = developmentHostInspectPort(development)
     const host = new DesktopHostProcess(resources.node, resources.dsh, activeProject,
@@ -953,7 +956,7 @@ async function main(): Promise<void> {
       : { label: currentDesktopLocale().messages.aboutMenu, role: 'about' },
     { type: 'separator' },
     { label: currentDesktopLocale().messages.checkUpdatesMenu, click: () => { void openUpdatePrompt(true) } },
-    ...process.platform === 'darwin' || process.platform === 'win32'
+    ...['darwin', 'win32', 'linux'].includes(process.platform)
       ? [{ label: currentDesktopLocale().messages.cliCommandMenu, click: () => { void commandManager.show() } }] : [],
     ...development ? [
       { type: 'separator' as const },
@@ -981,15 +984,18 @@ async function main(): Promise<void> {
     tray?.relabel()
   }
   refreshApplicationMenu()
-  const trayIconPath = development ? join(app.getAppPath(), 'resources', 'tray-windows.ico') : join(process.resourcesPath, 'tray.ico')
-  if (process.platform === 'win32') {
+  const linux = process.platform === 'linux'
+  const trayIconPath = development
+    ? join(app.getAppPath(), 'resources', linux ? 'tray-linux.png' : 'tray-windows.ico')
+    : join(process.resourcesPath, linux ? 'tray.png' : 'tray.ico')
+  if (process.platform === 'win32' || linux) {
     // The tray is the way back to a hidden window; without it, relaunching the application still focuses it.
     try {
       tray = new DesktopTray({ iconPath: trayIconPath, locale: currentDesktopLocale,
         open: () => { focusPrimaryWindow() }, quit: () => { app.quit() } })
     } catch (error) { console.warn('desktop tray: unavailable', error) }
   }
-  const backgroundNotice = process.platform === 'win32'
+  const backgroundNotice = process.platform === 'win32' || linux
     ? new DesktopBackgroundNotice({ markerPath: join(app.getPath('userData'), 'background-close-confirmed'),
       locale: () => locale, show: ordinaryMessageBox, focus: () => { updateDialog.focus() } })
     : undefined
@@ -1294,10 +1300,10 @@ async function main(): Promise<void> {
         () => mandatoryUI?.confirmationWindow ?? currentDialogWindow(),
         (event) => { console.info(`desktop policy authentication: ${event}`); updateJournal?.action(`policy-login-${event}`) })
     }
-    if (!['win32', 'darwin'].includes(process.platform) || !['x64', 'arm64'].includes(process.arch)) throw new Error('desktop policy: unsupported platform')
+    if (!['win32', 'darwin', 'linux'].includes(process.platform) || !['x64', 'arm64'].includes(process.arch)) throw new Error('desktop policy: unsupported platform')
     let wasBlocking = false
     mandatoryPolicy = new DesktopMandatoryUpdatePolicy(policyConfig, {
-      platform: process.platform as 'win32' | 'darwin', arch: process.arch as 'x64' | 'arm64',
+      platform: process.platform as 'win32' | 'darwin' | 'linux', arch: process.arch as 'x64' | 'arm64',
       bundledDshVersion: app.isPackaged ? readDesktopRuntime(resources.dsh).release.version : app.getVersion(),
     }, (state) => {
       if (state.error !== 'authentication-required') policyAuthenticationQueued = false
