@@ -233,7 +233,7 @@ export async function createDesktopUploadPlan(
     throw new Error(`desktop upload: ${targetName} package completion record for ${buildVersion} does not match the ${update.environment} update destination`)
   }
 
-  const metadataFilename = desktopUpdateMetadataFilename(buildVersion, target.platform)
+  const metadataFilename = desktopUpdateMetadataFilename(buildVersion, target.platform, target.arch)
   const metadataPath = join(artifactsRoot, metadataFilename)
   let metadataValue: unknown
   try {

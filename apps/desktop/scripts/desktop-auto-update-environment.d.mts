@@ -55,11 +55,13 @@ export function desktopBuildRecordFilename(target: DesktopAutoUpdateTarget): str
  * Return the electron-builder channel metadata filename for an application version.
  * @param version - Desktop semantic version.
  * @param platform - Target platform.
+ * @param arch - Target Node.js architecture.
  * @returns Channel metadata filename emitted for the target.
  */
 export function desktopUpdateMetadataFilename(
   version: string,
   platform: NodeJS.Platform,
+  arch: string,
 ): string
 
 /**

@@ -68,17 +68,20 @@ export function desktopBuildRecordFilename(target) {
  * Return the electron-builder channel metadata filename for an application version.
  * @param {string} version - Desktop semantic version.
  * @param {NodeJS.Platform} platform - Target platform.
+ * @param {string} arch - Target Node.js architecture.
  * @returns {string} Channel metadata filename emitted for the target.
  */
-export function desktopUpdateMetadataFilename(version, platform) {
+export function desktopUpdateMetadataFilename(version, platform, arch) {
   if (valid(version) === null) {
     throw new Error(`desktop auto-update: invalid Desktop version ${JSON.stringify(version)}`)
   }
-  const suffix = platform === 'darwin' ? '-mac' : platform === 'win32' ? '' : platform === 'linux' ? '-linux' : undefined
-  if (suffix === undefined) {
+  const osSuffix = platform === 'darwin' ? '-mac' : platform === 'win32' ? '' : platform === 'linux' ? '-linux' : undefined
+  if (osSuffix === undefined) {
     throw new Error(`desktop auto-update: unsupported metadata platform ${platform}`)
   }
-  return `nightly${suffix}.yml`
+  // electron-builder names the architecture only in the Linux feed, whose single channel file serves both deb and AppImage.
+  const archSuffix = platform === 'linux' && arch !== 'x64' ? `-${arch}` : ''
+  return `nightly${osSuffix}${archSuffix}.yml`
 }
 
 /**

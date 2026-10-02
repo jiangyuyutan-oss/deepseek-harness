@@ -48,7 +48,7 @@ async function fixture(
   await writeFile(join(repositoryRoot, 'package.json'), `${JSON.stringify({ version })}\n`)
   await writeFile(join(appRoot, 'package.json'), `${JSON.stringify({ version })}\n`)
 
-  const [os, arch] = target.split('-') as ['mac' | 'win', 'arm64' | 'x64']
+  const [os, arch] = target.split('-') as ['mac' | 'win' | 'linux', 'arm64' | 'x64']
   const base = `deepseek-harness-${version}-${os}-${arch}`
   const origin = environment === 'test'
     ? TEST_ORIGIN
@@ -66,25 +66,40 @@ async function fixture(
     await writeFile(join(artifactsRoot, `${base}.zip`), zip)
     await writeFile(join(artifactsRoot, `${base}.zip.blockmap`), 'blockmap')
     await writeFile(join(artifactsRoot, `${base}.dmg`), 'notarized DMG fixture')
-    await writeFile(join(artifactsRoot, desktopUpdateMetadataFilename(version, 'darwin')), `${JSON.stringify({
+    await writeFile(join(artifactsRoot, desktopUpdateMetadataFilename(version, 'darwin', arch)), `${JSON.stringify({
       version,
       path: `${base}.zip`,
       files: [{ url: `${base}.zip`, size: Buffer.byteLength(zip), sha512: digest(zip) }],
     })}\n`)
   }
-  else {
+  else if (os === 'win') {
     const executable = 'signed NSIS executable fixture'
     await writeFile(join(artifactsRoot, `${base}.exe`), executable)
     const info = await createBlockmap(join(artifactsRoot, `${base}.exe`), {},
       { info: { emitArtifactBuildCompleted: async () => {} } }, `${base}.exe`)
     expect(Object.hasOwn(info, 'blockMapSize')).toBe(false)
-    await writeFile(join(artifactsRoot, desktopUpdateMetadataFilename(version, 'win32')), `${JSON.stringify({
+    await writeFile(join(artifactsRoot, desktopUpdateMetadataFilename(version, 'win32', arch)), `${JSON.stringify({
       version,
       path: `${base}.exe`,
       files: [{
         url: `${base}.exe`,
         ...info,
       }],
+    })}\n`)
+  }
+  else {
+    // electron-builder merges the deb and AppImage lanes into one Linux channel file.
+    const deb = 'signed deb package fixture'
+    const appImage = 'AppImage fixture'
+    await writeFile(join(artifactsRoot, `${base}.deb`), deb)
+    await writeFile(join(artifactsRoot, `${base}.AppImage`), appImage)
+    await writeFile(join(artifactsRoot, desktopUpdateMetadataFilename(version, 'linux', arch)), `${JSON.stringify({
+      version,
+      path: `${base}.deb`,
+      files: [
+        { url: `${base}.deb`, size: Buffer.byteLength(deb), sha512: digest(deb) },
+        { url: `${base}.AppImage`, size: Buffer.byteLength(appImage), sha512: digest(appImage) },
+      ],
     })}\n`)
   }
   return {
@@ -116,7 +131,7 @@ describe('desktop upload plan', () => {
   it('uploads only the selected latest installer to each deployment using the existing COS transport', async () => {
     const published = []
     for (const environment of ['production', 'test'] as const) {
-      for (const target of ['mac-arm64', 'mac-x64', 'win-x64'] as const) {
+      for (const target of ['mac-arm64', 'mac-x64', 'win-x64', 'linux-arm64'] as const) {
         const paths = await fixture(target, '1.2.3', environment)
         const plan = await createDesktopUploadPlan(target, { ...paths, latest: true })
         const loopback = await startCosLoopback()
@@ -212,17 +227,18 @@ describe('desktop upload plan', () => {
     })
   })
 
-  it.each(['mac-arm64', 'mac-x64', 'win-x64'] as const)('publishes every %s object and YAML reference inside the test release directory', async (target) => {
+  it.each(['mac-arm64', 'mac-x64', 'win-x64', 'linux-arm64'] as const)('publishes every %s object and YAML reference inside the test release directory', async (target) => {
     const paths = await fixture(target)
     const plan = await createDesktopUploadPlan(target, paths)
     const prefix = `dsh-desk/${RELEASE_ID}`
-    const payload = plan.artifacts.find(artifact => artifact.filename.endsWith(target === 'win-x64' ? '.exe' : '.zip'))!
+    const payloadExtension = target === 'win-x64' ? '.exe' : target === 'linux-arm64' ? '.deb' : '.zip'
+    const payload = plan.artifacts.find(artifact => artifact.filename.endsWith(payloadExtension))!
     for (const artifact of plan.artifacts) {
       expect(artifact.key).toBe(`${prefix}/${artifact.channelMetadata ? 'feeds' : 'bin'}/${target}/${artifact.filename}`)
       if (artifact.channelMetadata) {
         expect(load(artifact.contents!)).toMatchObject({
           path: `${TEST_ORIGIN}/${payload.key}`,
-          files: [{ url: `${TEST_ORIGIN}/${payload.key}` }],
+          files: expect.arrayContaining([expect.objectContaining({ url: `${TEST_ORIGIN}/${payload.key}` })]),
         })
       }
     }
