@@ -1,0 +1,16 @@
+[
+  {
+    "key": "dsh-desk/0123456789abcdef0123456789abcdef/bin/linux-arm64/deepseek-harness-1.2.3-linux-arm64.deb"
+  },
+  {
+    "key": "dsh-desk/0123456789abcdef0123456789abcdef/bin/linux-arm64/deepseek-harness-1.2.3-linux-arm64.AppImage"
+  },
+  {
+    "key": "dsh-desk/0123456789abcdef0123456789abcdef/feeds/linux-arm64/nightly-linux-arm64.yml",
+    "contents": "version: 1.2.3\npath: >-\n  https://desktop-updates.example.com/dsh-desk/0123456789abcdef0123456789abcdef/bin/linux-arm64/deepseek-harness-1.2.3-linux-arm64.deb\nfiles:\n  - url: >-\n      https://desktop-updates.example.com/dsh-desk/0123456789abcdef0123456789abcdef/bin/linux-arm64/deepseek-harness-1.2.3-linux-arm64.deb\n    size: 26\n    sha512: >-\n      Q6jsBJ3wVShTJsaah0e6j2oh3DiAdtNeVd+VCmeQh4xXr/qYSgd5lE3YfhdKTOXjpxInW5g17v2f0VwEBxpqhQ==\n  - url: >-\n      https://desktop-updates.example.com/dsh-desk/0123456789abcdef0123456789abcdef/bin/linux-arm64/deepseek-harness-1.2.3-linux-arm64.AppImage\n    size: 16\n    sha512: >-\n      X1auyn53SCE/EB10wMveX5lOUNaj9Q7Yi1+eb4zLkq+jyK2Bamgwz+m7CoEWX7jgBSwbSRP8LNAQhQIdxJaCDw==\n"
+  },
+  {
+    "key": "dsh-desk/0123456789abcdef0123456789abcdef/feeds/linux-arm64/latest-linux-arm64.yml",
+    "contents": "version: 1.2.3\npath: >-\n  https://desktop-updates.example.com/dsh-desk/0123456789abcdef0123456789abcdef/bin/linux-arm64/deepseek-harness-1.2.3-linux-arm64.deb\nfiles:\n  - url: >-\n      https://desktop-updates.example.com/dsh-desk/0123456789abcdef0123456789abcdef/bin/linux-arm64/deepseek-harness-1.2.3-linux-arm64.deb\n    size: 26\n    sha512: >-\n      Q6jsBJ3wVShTJsaah0e6j2oh3DiAdtNeVd+VCmeQh4xXr/qYSgd5lE3YfhdKTOXjpxInW5g17v2f0VwEBxpqhQ==\n  - url: >-\n      https://desktop-updates.example.com/dsh-desk/0123456789abcdef0123456789abcdef/bin/linux-arm64/deepseek-harness-1.2.3-linux-arm64.AppImage\n    size: 16\n    sha512: >-\n      X1auyn53SCE/EB10wMveX5lOUNaj9Q7Yi1+eb4zLkq+jyK2Bamgwz+m7CoEWX7jgBSwbSRP8LNAQhQIdxJaCDw==\n"
+  }
+]
